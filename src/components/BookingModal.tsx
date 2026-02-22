@@ -1,0 +1,237 @@
+import { useState } from "react";
+import { X, Star, Clock, MapPin, Minus, Plus, Loader2 } from "lucide-react";
+import { useShowtimes } from "@/hooks/useMovieData";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
+import type { Tables } from "@/integrations/supabase/types";
+
+type Movie = Tables<"movies">;
+
+interface BookingModalProps {
+  movie: Movie;
+  onClose: () => void;
+}
+
+const BookingModal = ({ movie, onClose }: BookingModalProps) => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { showtimes, loading: showtimesLoading } = useShowtimes(movie.id);
+  const [selectedShowtime, setSelectedShowtime] = useState<Tables<"showtimes"> | null>(null);
+  const [seats, setSeats] = useState(1);
+  const [step, setStep] = useState<"showtime" | "payment" | "confirmed">("showtime");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
+  if (!user) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+        <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+          <h2 className="text-xl font-bold text-foreground mb-2">Sign in Required</h2>
+          <p className="text-muted-foreground mb-4">Please sign in to book tickets.</p>
+          <div className="flex gap-3">
+            <button onClick={() => navigate("/auth")} className="bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium hover:opacity-90">
+              Sign In
+            </button>
+            <button onClick={onClose} className="bg-secondary text-secondary-foreground px-4 py-2 rounded-md font-medium">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const totalAmount = selectedShowtime ? seats * Number(selectedShowtime.price) : 0;
+
+  const handleMockPayment = async () => {
+    if (!selectedShowtime || !user) return;
+    setPaymentLoading(true);
+
+    // Create booking with pending status
+    const { data: booking, error } = await supabase.from("bookings").insert({
+      user_id: user.id,
+      showtime_id: selectedShowtime.id,
+      seats,
+      total_amount: totalAmount,
+      status: "pending",
+    }).select().single();
+
+    if (error) {
+      toast({ title: "Booking failed", description: error.message, variant: "destructive" });
+      setPaymentLoading(false);
+      return;
+    }
+
+    // Mock payment delay (2 seconds)
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Update booking to paid
+    await supabase.from("bookings").update({ status: "paid" }).eq("id", booking.id);
+
+    // Decrement available seats
+    await supabase.from("showtimes").update({
+      available_seats: selectedShowtime.available_seats - seats,
+    }).eq("id", selectedShowtime.id);
+
+    setPaymentLoading(false);
+    setStep("confirmed");
+
+    // Mock email notification via toast
+    toast({
+      title: "🎬 Booking Confirmed!",
+      description: `Your tickets for "${movie.title}" have been booked. A confirmation email has been sent to your inbox.`,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-bold text-foreground">{movie.title}</h2>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-secondary text-muted-foreground">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {step === "showtime" && (
+            <>
+              <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+                <Star className="text-primary fill-primary" size={14} />
+                <span className="text-foreground font-medium">{movie.rating}/10</span>
+                <span>•</span>
+                <span>{movie.genres.join(", ")}</span>
+              </div>
+
+              <h3 className="font-semibold text-foreground mb-3">Select Showtime</h3>
+              {showtimesLoading ? (
+                <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" /></div>
+              ) : showtimes.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-4">No showtimes available.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 mb-6">
+                  {showtimes.map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => setSelectedShowtime(st)}
+                      className={`flex items-center justify-between p-3 rounded-md border text-left transition-colors ${
+                        selectedShowtime?.id === st.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-muted-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Clock size={16} className="text-muted-foreground" />
+                        <span className="text-foreground font-medium">{st.show_time.slice(0, 5)}</span>
+                        <div className="flex items-center gap-1 text-muted-foreground text-sm">
+                          <MapPin size={12} />
+                          <span>{st.venue}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-foreground font-semibold">₹{Number(st.price)}</span>
+                        <p className="text-xs text-muted-foreground">{st.available_seats} seats</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {selectedShowtime && (
+                <>
+                  <h3 className="font-semibold text-foreground mb-3">Number of Seats</h3>
+                  <div className="flex items-center gap-4 mb-6">
+                    <button
+                      onClick={() => setSeats(Math.max(1, seats - 1))}
+                      className="p-2 rounded-md bg-secondary text-foreground hover:bg-secondary/80"
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="text-xl font-bold text-foreground w-8 text-center">{seats}</span>
+                    <button
+                      onClick={() => setSeats(Math.min(selectedShowtime.available_seats, seats + 1))}
+                      className="p-2 rounded-md bg-secondary text-foreground hover:bg-secondary/80"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+
+                  <div className="bg-secondary rounded-md p-4 mb-4">
+                    <div className="flex justify-between text-sm text-muted-foreground mb-1">
+                      <span>{seats} × ₹{Number(selectedShowtime.price)}</span>
+                      <span>₹{totalAmount}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-foreground text-lg border-t border-border pt-2 mt-2">
+                      <span>Total</span>
+                      <span>₹{totalAmount}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setStep("payment")}
+                    className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-md hover:opacity-90 transition-opacity"
+                  >
+                    Proceed to Payment
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          {step === "payment" && (
+            <div className="text-center py-4">
+              <h3 className="text-lg font-bold text-foreground mb-2">Mock Payment</h3>
+              <p className="text-muted-foreground text-sm mb-6">
+                This is a simulated payment. Click below to confirm your booking of {seats} seat(s) for ₹{totalAmount}.
+              </p>
+              <button
+                onClick={handleMockPayment}
+                disabled={paymentLoading}
+                className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {paymentLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Processing Payment...
+                  </>
+                ) : (
+                  `Pay ₹${totalAmount}`
+                )}
+              </button>
+              <button onClick={() => setStep("showtime")} className="mt-3 text-sm text-muted-foreground hover:text-foreground">
+                ← Go back
+              </button>
+            </div>
+          )}
+
+          {step === "confirmed" && (
+            <div className="text-center py-8">
+              <div className="text-5xl mb-4">🎉</div>
+              <h3 className="text-xl font-bold text-foreground mb-2">Booking Confirmed!</h3>
+              <p className="text-muted-foreground text-sm mb-1">
+                {seats} seat(s) for <span className="text-foreground font-medium">{movie.title}</span>
+              </p>
+              <p className="text-muted-foreground text-sm mb-6">
+                {selectedShowtime?.show_time.slice(0, 5)} at {selectedShowtime?.venue}
+              </p>
+              <p className="text-xs text-muted-foreground mb-6 bg-secondary rounded-md p-3">
+                📧 A mock confirmation email has been triggered (see toast notification).
+              </p>
+              <button
+                onClick={onClose}
+                className="bg-primary text-primary-foreground font-semibold px-6 py-2.5 rounded-md hover:opacity-90"
+              >
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default BookingModal;
