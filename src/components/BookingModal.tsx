@@ -27,6 +27,7 @@ const BookingModal = ({ movie, onClose }: BookingModalProps) => {
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [step, setStep] = useState<"showtime" | "seats" | "payment" | "confirmed">("showtime");
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"debit" | "credit" | "upi" | null>(null);
 
   const handleSeatSelectionChange = useCallback((s: string[]) => setSelectedSeatIds(s), []);
 
@@ -192,21 +193,61 @@ const BookingModal = ({ movie, onClose }: BookingModalProps) => {
             </>
           )}
 
-          {step === "payment" && (
-            <div className="text-center py-4">
-              <h3 className="text-lg font-bold text-foreground mb-2">Mock Payment</h3>
-              <p className="text-muted-foreground text-sm mb-2">
-                {seats} seat(s): <span className="text-foreground font-medium">{selectedSeatIds.sort().join(", ")}</span>
-              </p>
-              <p className="text-muted-foreground text-sm mb-6">Total: ₹{totalAmount}</p>
+          {step === "payment" && selectedShowtime && (
+            <div className="py-2">
+              <h3 className="text-lg font-bold text-foreground mb-4">Payment</h3>
+
+              {/* Booking Summary */}
+              <div className="bg-secondary rounded-lg p-4 mb-5 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Movie</span>
+                  <span className="text-foreground font-medium">{movie.title}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Showtime</span>
+                  <span className="text-foreground font-medium">{selectedShowtime.show_time.slice(0, 5)} · {selectedShowtime.venue}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Seats</span>
+                  <span className="text-foreground font-medium">{selectedSeatIds.sort().join(", ")}</span>
+                </div>
+                <div className="flex justify-between border-t border-border pt-2 mt-2">
+                  <span className="text-foreground font-bold">Total</span>
+                  <span className="text-foreground font-bold text-lg">₹{totalAmount}</span>
+                </div>
+              </div>
+
+              {/* Payment Method Selection */}
+              <h4 className="font-semibold text-foreground mb-3">Select Payment Method</h4>
+              <div className="space-y-2 mb-5">
+                {([
+                  { id: "debit", label: "Debit Card", icon: "💳" },
+                  { id: "credit", label: "Credit Card", icon: "💳" },
+                  { id: "upi", label: "UPI", icon: "📱" },
+                ] as const).map((method) => (
+                  <button
+                    key={method.id}
+                    onClick={() => setPaymentMethod(method.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-md border text-sm font-medium transition-colors ${
+                      paymentMethod === method.id
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-muted-foreground text-foreground"
+                    }`}
+                  >
+                    <span className="text-lg">{method.icon}</span>
+                    <span>{method.label}</span>
+                  </button>
+                ))}
+              </div>
+
               <button
                 onClick={handleMockPayment}
-                disabled={paymentLoading}
+                disabled={paymentLoading || !paymentMethod}
                 className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {paymentLoading ? (<><Loader2 size={18} className="animate-spin" />Processing Payment...</>) : `Pay ₹${totalAmount}`}
               </button>
-              <button onClick={() => setStep("seats")} className="mt-3 text-sm text-muted-foreground hover:text-foreground">← Go back</button>
+              <button onClick={() => setStep("seats")} className="w-full mt-2 text-sm text-muted-foreground hover:text-foreground text-center">← Go back</button>
             </div>
           )}
 
