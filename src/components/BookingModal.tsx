@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { X, Star, Clock, MapPin, Minus, Plus, Loader2 } from "lucide-react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { X, Star, Clock, MapPin, Minus, Plus, Loader2, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { useShowtimes } from "@/hooks/useMovieData";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import SeatSelection from "./SeatSelection";
 import type { Tables } from "@/integrations/supabase/types";
+import { format, parseISO } from "date-fns";
 
 type Movie = Tables<"movies">;
 
@@ -22,12 +23,33 @@ const BookingModal = ({ movie, onClose }: BookingModalProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { showtimes, loading: showtimesLoading } = useShowtimes(movie.id);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedShowtime, setSelectedShowtime] = useState<Tables<"showtimes"> | null>(null);
   const [seats, setSeats] = useState(1);
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [step, setStep] = useState<"showtime" | "seats" | "payment" | "confirmed">("showtime");
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"debit" | "credit" | "upi" | null>(null);
+  const dateScrollRef = useRef<HTMLDivElement>(null);
+
+  const uniqueDates = useMemo(() => {
+    return [...new Set(showtimes.map((st) => st.show_date))].sort();
+  }, [showtimes]);
+
+  useEffect(() => {
+    if (uniqueDates.length > 0 && !selectedDate) {
+      setSelectedDate(uniqueDates[0]);
+    }
+  }, [uniqueDates, selectedDate]);
+
+  const filteredShowtimes = useMemo(
+    () => (selectedDate ? showtimes.filter((st) => st.show_date === selectedDate) : []),
+    [showtimes, selectedDate]
+  );
+
+  const scrollDates = (dir: "left" | "right") => {
+    dateScrollRef.current?.scrollBy({ left: dir === "left" ? -150 : 150, behavior: "smooth" });
+  };
 
   const handleSeatSelectionChange = useCallback((s: string[]) => setSelectedSeatIds(s), []);
 
@@ -104,37 +126,71 @@ const BookingModal = ({ movie, onClose }: BookingModalProps) => {
               ) : showtimes.length === 0 ? (
                 <p className="text-muted-foreground text-sm py-4">No showtimes available.</p>
               ) : (
-                <div className="space-y-4 mb-6">
-                  {Object.entries(
-                    showtimes.reduce<Record<string, typeof showtimes>>((acc, st) => {
-                      (acc[st.venue] ||= []).push(st);
-                      return acc;
-                    }, {})
-                  ).map(([venue, venueShowtimes]) => (
-                    <div key={venue} className="border border-border rounded-lg overflow-hidden">
-                      <div className="flex items-center gap-2 px-4 py-3 bg-secondary/50">
-                        <MapPin size={16} className="text-primary" />
-                        <h3 className="font-semibold text-foreground">{venue}</h3>
-                      </div>
-                      <div className="p-3 flex flex-wrap gap-2">
-                        {venueShowtimes.map((st) => (
+                <>
+                  {/* Horizontal Date Selector */}
+                  <div className="flex items-center gap-1 mb-5">
+                    <button onClick={() => scrollDates("left")} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground shrink-0"><ChevronLeft size={18} /></button>
+                    <div ref={dateScrollRef} className="flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth">
+                      {uniqueDates.map((date) => {
+                        const parsed = parseISO(date);
+                        const isSelected = selectedDate === date;
+                        return (
                           <button
-                            key={st.id}
-                            onClick={() => setSelectedShowtime(st)}
-                            className={`flex flex-col items-center px-4 py-2 rounded-md border text-sm transition-colors ${
-                              selectedShowtime?.id === st.id
+                            key={date}
+                            onClick={() => { setSelectedDate(date); setSelectedShowtime(null); }}
+                            className={`flex flex-col items-center px-4 py-2 rounded-lg border text-sm shrink-0 transition-colors ${
+                              isSelected
                                 ? "border-primary bg-primary/10 text-primary"
                                 : "border-border hover:border-muted-foreground text-foreground"
                             }`}
                           >
-                            <span className="font-semibold flex items-center gap-1"><Clock size={12} />{st.show_time.slice(0, 5)}</span>
-                            <span className="text-xs text-muted-foreground">₹{Number(st.price)} · {st.available_seats} seats</span>
+                            <span className="text-xs font-medium uppercase">{format(parsed, "EEE")}</span>
+                            <span className="text-lg font-bold leading-tight">{format(parsed, "dd")}</span>
+                            <span className="text-xs text-muted-foreground">{format(parsed, "MMM")}</span>
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                    <button onClick={() => scrollDates("right")} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground shrink-0"><ChevronRight size={18} /></button>
+                  </div>
+
+                  {/* Venues & Showtimes for selected date */}
+                  {filteredShowtimes.length === 0 ? (
+                    <p className="text-muted-foreground text-sm py-4">No showtimes on this date.</p>
+                  ) : (
+                    <div className="space-y-4 mb-6">
+                      {Object.entries(
+                        filteredShowtimes.reduce<Record<string, typeof filteredShowtimes>>((acc, st) => {
+                          (acc[st.venue] ||= []).push(st);
+                          return acc;
+                        }, {})
+                      ).map(([venue, venueShowtimes]) => (
+                        <div key={venue} className="border border-border rounded-lg overflow-hidden">
+                          <div className="flex items-center gap-2 px-4 py-3 bg-secondary/50">
+                            <MapPin size={16} className="text-primary" />
+                            <h3 className="font-semibold text-foreground">{venue}</h3>
+                          </div>
+                          <div className="p-3 flex flex-wrap gap-2">
+                            {venueShowtimes.map((st) => (
+                              <button
+                                key={st.id}
+                                onClick={() => setSelectedShowtime(st)}
+                                className={`flex flex-col items-center px-4 py-2 rounded-md border text-sm transition-colors ${
+                                  selectedShowtime?.id === st.id
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-border hover:border-muted-foreground text-foreground"
+                                }`}
+                              >
+                                <span className="font-semibold flex items-center gap-1"><Clock size={12} />{st.show_time.slice(0, 5)}</span>
+                                <span className="text-xs text-muted-foreground">₹{Number(st.price)} · {st.available_seats} seats</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
 
               {selectedShowtime && (
