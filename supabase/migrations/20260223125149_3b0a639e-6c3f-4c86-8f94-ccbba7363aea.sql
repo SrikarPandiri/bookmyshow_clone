@@ -1,0 +1,1 @@
+ALTER TABLE public.bookings ADD COLUMN selected_seats text[] DEFAULT '{}'::text[];

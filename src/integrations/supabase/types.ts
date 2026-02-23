@@ -19,6 +19,7 @@ export type Database = {
           created_at: string
           id: string
           seats: number
+          selected_seats: string[] | null
           showtime_id: string
           status: Database["public"]["Enums"]["booking_status"]
           total_amount: number
@@ -29,6 +30,7 @@ export type Database = {
           created_at?: string
           id?: string
           seats?: number
+          selected_seats?: string[] | null
           showtime_id: string
           status?: Database["public"]["Enums"]["booking_status"]
           total_amount: number
@@ -39,6 +41,7 @@ export type Database = {
           created_at?: string
           id?: string
           seats?: number
+          selected_seats?: string[] | null
           showtime_id?: string
           status?: Database["public"]["Enums"]["booking_status"]
           total_amount?: number
