@@ -23,7 +23,7 @@ export const useMovies = () => {
     fetchMovies();
 
     const channel = supabase
-      .channel("movies-realtime")
+      .channel(`movies-realtime-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "movies" }, () => {
         fetchMovies();
       })
@@ -83,7 +83,7 @@ export const useBookings = (userId: string | null) => {
     fetch();
 
     const channel = supabase
-      .channel("bookings-realtime")
+      .channel(`bookings-realtime-${userId}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `user_id=eq.${userId}` }, () => {
         fetch();
       })
